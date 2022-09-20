@@ -5,6 +5,7 @@ import errno
 import os
 import glob
 import argparse
+import multiprocessing
 
 def mkdir_p(path):
     try:
@@ -60,7 +61,8 @@ def cal_normal(XY, Z, win_sz, dep_th):
 def convert_scene(src_dir, dst_dir, sce_name, j, win_sz=7, dep_th=0.1, x_ds=2, y_ds=2):
 	sav_path = '{}/{}'.format(dst_dir, sce_name)
 	mkdir_p(sav_path)
-	sav_path = sav_path + '/{:04d}_normal.npy'.format(j)
+	print(sav_path)
+	sav_path = sav_path + '/{:04d}_normal.png'.format(j)
 	if os.path.exists(sav_path):
 		print('{} exists, continue ...'.format(sav_path))
 		return
@@ -99,8 +101,18 @@ def convert_scene(src_dir, dst_dir, sce_name, j, win_sz=7, dep_th=0.1, x_ds=2, y
 	# axs[2].imshow(mask)
 	# plt.show()
 
-	np.save(sav_path, normal_u.astype(np.float16))
+	if normal_u.min < 0:
+		print('*' * 50)
+		print('{}'.format(sav_path))
+	# np.save(sav_path, normal_u.astype(np.float16))
+	cv2.imwrite(sav_path, (normal_u * 65535).astype(np.uint16))
 	print('save {} successful.'.format(sav_path))
+
+
+def convert_views(all_views, src_dir, dst_dir, sce_name):
+	for j in range(len(all_views)):
+		convert_scene(src_dir=src_dir, dst_dir=dst_dir, sce_name=sce_name, j=j)
+
 
 def convert_helper(args):
 	data_list = args.list
@@ -110,18 +122,24 @@ def convert_helper(args):
 	all_scenes = open(data_list, 'r').readlines()
 	all_scenes = list(map(lambda x: x.strip(), all_scenes))
 	cnt = len(all_scenes)
+
+	pool = multiprocessing.Pool(multiprocessing.cpu_count())
+
 	for i in range(cnt):
 		scene_name = all_scenes[i]
 		print('processing {} ({}/{}) ...'.format(scene_name, i, cnt))
 		all_views = glob.glob('{}/{}/*.jpg'.format(data_dir, scene_name))
-		for j in range(len(all_views)):
-			convert_scene(src_dir=data_dir, dst_dir=dst_dir, sce_name=scene_name, j=j)
+		pool.apply_async(func = convert_views, args = (all_views, data_dir, dst_dir, scene_name))
+		""" for j in range(len(all_views)):
+			convert_scene(src_dir=data_dir, dst_dir=dst_dir, sce_name=scene_name, j=j) """
+	pool.close()
+	pool.join()
 
 parser = argparse.ArgumentParser(description='convertor',
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('--data-dir', dest='data_dir', type=str, default='../train')
-parser.add_argument('--list', dest='list', type=str)
-parser.add_argument('--dst-dir', dest='dst_dir', type=str, default='./train_normal')
+parser.add_argument('--data-dir', dest='data_dir', type=str, default='/data/ylin/demon/test')
+parser.add_argument('--list', dest='list', type=str, default='/data/ylin/demon/test/scene_list')
+parser.add_argument('--dst-dir', dest='dst_dir', type=str, default='/data/ylin/demon/test_normal')
 
 args = parser.parse_args()
 
